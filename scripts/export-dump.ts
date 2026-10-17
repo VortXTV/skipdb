@@ -18,6 +18,7 @@ const data = await db
   .select({
     id: segments.id,
     imdb_id: segments.imdbId,
+    title: titles.name,
     media_type: titles.mediaType,
     season: segments.season,
     episode: segments.episode,

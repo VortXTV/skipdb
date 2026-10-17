@@ -24,6 +24,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Verify dump round-trip contract
+        run: node --test scripts/tests/dump-contract.test.mjs
+
       - name: Generate dump
         run: pnpm db:export
         env:

@@ -38,10 +38,12 @@ export async function GET(req: Request) {
     .select({
       id: segments.id,
       imdb_id: segments.imdbId,
+      title: titles.name,
       media_type: titles.mediaType,
       season: segments.season,
       episode: segments.episode,
       segment_type: segments.segmentType,
+      status: segments.status,
       start_ms: segments.startMs,
       end_ms: segments.endMs,
       duration_ms: segments.durationMs,
