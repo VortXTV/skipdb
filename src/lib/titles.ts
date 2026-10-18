@@ -1,8 +1,13 @@
+import { READ_ONLY } from "./read-only";
 import { db } from "@/db";
 import { titles, episodes } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { findByImdb, getSeasonEpisodes, tmdbEnabled } from "./tmdb";
 import type { Title } from "@/db/schema";
+
+export class ReadOnlyTitleMissingError extends Error {
+  constructor() { super("Title is not cached on this read-only instance."); }
+}
 
 /**
  * Get a title row by IMDb id, creating/refreshing it from TMDB when possible.
@@ -15,6 +20,10 @@ export async function ensureTitle(
   const existing = (
     await db.select().from(titles).where(eq(titles.imdbId, imdbId))
   )[0];
+  if (READ_ONLY) {
+    if (existing) return existing;
+    throw new ReadOnlyTitleMissingError();
+  }
   if (existing) {
     // Backfill artwork/metadata for legacy or manually-seeded titles that were
     // created without a poster (e.g. the seeded Breaking Bad entry).
@@ -84,6 +93,7 @@ async function refreshTitleMeta(title: Title): Promise<Title | null> {
 
 /** Ensure episode metadata is cached for a series season (best-effort). */
 export async function ensureSeasonEpisodes(title: Title, season: number) {
+  if (READ_ONLY) return;
   if (title.mediaType !== "series" || !title.tmdbId) return;
   const have = await db
     .select()

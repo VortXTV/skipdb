@@ -1,3 +1,4 @@
+import { READ_ONLY, readOnlyError } from "@/lib/read-only";
 /**
  * POST /api/admin/import
  *
@@ -104,6 +105,7 @@ function resolveMs(ms?: number, flex?: z.infer<typeof flexTime>): number | null 
 // ---------------------------------------------------------------------------
 
 export async function POST(req: Request) {
+  if (READ_ONLY) return readOnlyError();
   const actor = await getActor(req);
   const role = actor?.user?.role;
   if (!actor || (role !== "moderator" && role !== "admin"))

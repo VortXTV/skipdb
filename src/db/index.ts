@@ -20,4 +20,4 @@ const pool =
 globalForDb.pool = pool;
 
 export const db = drizzle(pool, { schema });
-export { schema };
+export { schema, pool };

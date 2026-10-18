@@ -140,7 +140,8 @@ export default function DumpPage() {
             <li>Fork the repo and deploy to Vercel, Railway, or Fly.io</li>
             <li>
               Point <span className="mono text-slate-300">DATABASE_URL</span> at
-              a Postgres instance seeded from the dump (see below)
+              a Postgres instance seeded from the dump and rebuilt in a deliberately
+              writable maintenance process (see below)
             </li>
             <li>
               Set{" "}
@@ -163,6 +164,16 @@ DATABASE_URL=postgresql://...
 NEXT_PUBLIC_READ_ONLY=true
 DUMP_URL=${DUMP_URL ?? "https://github.com/SkipDB-TV/skipdb/releases/download/data-latest/skipdb-dump.json"}
 NEXT_PUBLIC_DUMP_URL=${DUMP_URL ?? "https://github.com/SkipDB-TV/skipdb/releases/download/data-latest/skipdb-dump.json"}`}</CodeBlock>
+          <p>
+            For initial setup or refresh, choose the maintenance database and
+            pause application writers through migration, matching-code cutover,
+            import and rebuild. Run the rebuild in a separate maintenance
+            process with the scoped flag below; keep the serving mirror set to
+            read-only. The command refuses read-only mode before querying and
+            exits nonzero instead of reporting skipped work as successful.
+          </p>
+          <CodeBlock>{`# Deliberate maintenance process only; serving mirror stays read-only
+NEXT_PUBLIC_READ_ONLY=false pnpm db:resolve`}</CodeBlock>
         </Section>
 
         <Section title="Host a full fork">
@@ -187,14 +198,14 @@ NEXT_PUBLIC_DUMP_URL=${DUMP_URL ?? "https://github.com/SkipDB-TV/skipdb/releases
             </li>
             <li>
               Rebuild resolved segments:{" "}
-              <span className="mono text-slate-300">pnpm db:resolve</span>
+              <span className="mono text-slate-300">NEXT_PUBLIC_READ_ONLY=false pnpm db:resolve</span>
             </li>
             <li>Deploy and set your env vars (see .env.example)</li>
           </ol>
           <CodeBlock>{`# Seed a fresh database from the public dump
 pnpm db:migrate
 pnpm db:import ${DUMP_URL ?? "https://github.com/SkipDB-TV/skipdb/releases/download/data-latest/skipdb-dump.json"}
-pnpm db:resolve
+NEXT_PUBLIC_READ_ONLY=false pnpm db:resolve
 
 # Then run the app
 pnpm build && pnpm start`}</CodeBlock>

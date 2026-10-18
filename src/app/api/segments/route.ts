@@ -1,3 +1,4 @@
+import { applyReputationChange } from "@/lib/reputation";
 import { db } from "@/db";
 import { segments, moderationLog } from "@/db/schema";
 import { and, eq, gt, isNull } from "drizzle-orm";
@@ -192,28 +193,36 @@ export async function POST(req: Request) {
       { role: actor.user.role, reputation: actor.user.reputation },
     );
 
-    await db
-      .update(segments)
-      .set({
-        startMs: input.startMs,
-        endMs: input.endMs,
-        status: decision.status,
-        autoApproved: decision.autoApproved,
-        reviewedBy: null,
-        reviewedAt: null,
-        rejectionReason: null,
-        updatedAt: new Date(),
-      })
-      .where(eq(segments.id, recentOwn.id));
+  const changed = await db.transaction(async (tx) => {
+    const [before] = await tx.select().from(segments).where(eq(segments.id, recentOwn.id)).for("update");
+    if (!before) return null;
+      const [after] = await tx
+        .update(segments)
+        .set({
+          startMs: input.startMs,
+          endMs: input.endMs,
+          status: decision.status,
+          autoApproved: decision.autoApproved,
+          reviewedBy: null,
+          reviewedAt: null,
+          rejectionReason: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(segments.id, recentOwn.id)).returning();
 
-    await db.insert(moderationLog).values({
-      segmentId: recentOwn.id,
-      moderatorId: null,
-      action: "edit",
-      reason: `auto-updated on resubmit within 24h; ${decision.reasons.join("; ")}`,
-    });
+      await tx.insert(moderationLog).values({
+        segmentId: recentOwn.id,
+        moderatorId: null,
+        action: "edit",
+        reason: `auto-updated on resubmit within 24h; ${decision.reasons.join("; ")}`,
+      });
+    await applyReputationChange(tx, before.submittedBy, before, after);
+    return after;
+  });
+  if (!changed) return apiError("Recent submission changed or was deleted. Retry.", 409);
 
-    if (decision.autoApproved) {
+    {
+      // A resubmit can also remove the previous approval.
       await recomputeResolved({
         imdbId: input.imdbId,
         titleId: recentOwn.titleId,
@@ -257,31 +266,31 @@ export async function POST(req: Request) {
     { role: actor.user.role, reputation: actor.user.reputation },
   );
 
-  const [created] = await db
-    .insert(segments)
-    .values({
-      titleId: title.id,
-      imdbId: input.imdbId,
-      season: input.season,
-      episode: input.episode,
-      segmentType: input.segmentType,
-      startMs: input.startMs,
-      endMs: input.endMs,
-      durationMs: input.durationMs,
-      submittedBy: actor.user.id,
-      status: decision.status,
-      autoApproved: decision.autoApproved,
-      source: actor.via === "api-key" ? "api" : "web",
-    })
-    .returning();
+  const created = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(segments)
+      .values({
+        titleId: title.id,
+        imdbId: input.imdbId,
+        season: input.season,
+        episode: input.episode,
+        segmentType: input.segmentType,
+        startMs: input.startMs,
+        endMs: input.endMs,
+        durationMs: input.durationMs,
+        submittedBy: actor.user.id,
+        status: decision.status,
+        autoApproved: decision.autoApproved,
+        source: actor.via === "api-key" ? "api" : "web",
+      })
+      .returning();
+
+    if (decision.autoApproved) await tx.insert(moderationLog).values({ segmentId: created.id, moderatorId: null, action: "auto-approve", reason: decision.reasons.join("; ") });
+    await applyReputationChange(tx, created.submittedBy, null, created);
+    return created;
+  });
 
   if (decision.autoApproved) {
-    await db.insert(moderationLog).values({
-      segmentId: created.id,
-      moderatorId: null,
-      action: "auto-approve",
-      reason: decision.reasons.join("; "),
-    });
     // Refresh the decided/best segment for this episode + type.
     await recomputeResolved({
       imdbId: input.imdbId,

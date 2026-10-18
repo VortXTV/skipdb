@@ -152,8 +152,15 @@ pnpm db:export
 
 # Seed a fresh database from the public dump
 pnpm db:import https://github.com/SkipDB-TV/skipdb/releases/download/data-latest/skipdb-dump.json
-pnpm db:resolve   # rebuild the resolved_segments cache
+NEXT_PUBLIC_READ_ONLY=false pnpm db:resolve   # rebuild resolved_segments_current
 ```
+
+The rebuild refuses `NEXT_PUBLIC_READ_ONLY=true` before querying and exits nonzero.
+Choose the maintenance database deliberately and pause application writers through
+migration, matching-code cutover and rebuild (see [the repair note](docs/repair-2026-10-17.md)).
+The command-scoped `NEXT_PUBLIC_READ_ONLY=false` above permits only that maintenance
+process to write; keep a mirror's serving environment set to `true`. The command
+does not override the read-only flag automatically.
 
 ## Hosting a mirror or fork
 
@@ -173,7 +180,7 @@ NEXT_PUBLIC_DUMP_URL=$DUMP_URL
 ```bash
 pnpm db:migrate
 pnpm db:import <dump-url>   # seed from the public dump
-pnpm db:resolve
+NEXT_PUBLIC_READ_ONLY=false pnpm db:resolve
 # deploy with your own DATABASE_URL + AUTH_SECRET etc.
 ```
 

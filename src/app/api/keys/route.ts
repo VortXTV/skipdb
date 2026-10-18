@@ -36,6 +36,7 @@ export async function POST() {
 
 // Revoke the user's active key.
 export async function DELETE() {
+  if (READ_ONLY) return readOnlyError();
   const session = await auth();
   if (!session?.user?.id) return apiError("Authentication required.", 401);
   await revokeApiKeys(session.user.id);

@@ -1,3 +1,4 @@
+import { ReadOnlyTitleMissingError } from "@/lib/titles";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/db";
@@ -74,7 +75,10 @@ export default async function EpisodePage({
   if (!/^tt\d{6,10}$/.test(id) || !Number.isInteger(season) || !Number.isInteger(episode))
     notFound();
 
-  const title = await ensureTitle(id, "series");
+  const title = await ensureTitle(id, "series").catch((error: unknown) => {
+    if (error instanceof ReadOnlyTitleMissingError) notFound();
+    throw error;
+  });
   await ensureSeasonEpisodes(title, season);
 
   const ep = (

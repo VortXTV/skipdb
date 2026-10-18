@@ -1,3 +1,4 @@
+import { READ_ONLY, readOnlyError } from "@/lib/read-only";
 import { json, apiError } from "@/lib/api";
 import { requireStaff } from "@/lib/admin";
 import { ensureTitle } from "@/lib/titles";
@@ -30,6 +31,7 @@ const bulkSchema = z.object({
 });
 
 export async function POST(req: Request) {
+  if (READ_ONLY) return readOnlyError();
   const staff = await requireStaff();
   if (!staff) return apiError("Forbidden", 403);
 

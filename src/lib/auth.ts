@@ -1,3 +1,4 @@
+import { READ_ONLY } from "./read-only";
 import NextAuth, { type DefaultSession } from "next-auth";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import GitHub from "next-auth/providers/github";
@@ -189,7 +190,7 @@ function buildProviders(): Provider[] {
   return providers;
 }
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const authRuntime = NextAuth({
   adapter: DrizzleAdapter(db, {
     usersTable: users,
     accountsTable: accounts,
@@ -221,5 +222,24 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           .where(eq(users.id, user.id));
       }
     },
+  },
+});
+
+// Server-rendered auth() can renew database sessions; server actions bypass the HTTP auth route.
+export const handlers = authRuntime.handlers;
+export async function auth() {
+  if (READ_ONLY) return null;
+  return authRuntime.auth();
+}
+export const signIn = new Proxy(authRuntime.signIn, {
+  apply(target, thisArg, args) {
+    if (READ_ONLY) throw new Error("This instance is read-only.");
+    return Reflect.apply(target, thisArg, args);
+  },
+});
+export const signOut = new Proxy(authRuntime.signOut, {
+  apply(target, thisArg, args) {
+    if (READ_ONLY) throw new Error("This instance is read-only.");
+    return Reflect.apply(target, thisArg, args);
   },
 });

@@ -1,3 +1,4 @@
+import { READ_ONLY } from "./read-only";
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { db } from "@/db";
@@ -24,6 +25,7 @@ export function sessionCookieName(): string {
  * `auth()` reads for OAuth and magic-link logins — no JWT strategy needed.
  */
 export async function createUserSession(userId: string): Promise<void> {
+  if (READ_ONLY) throw new Error("This instance is read-only.");
   const sessionToken = randomUUID();
   const expires = new Date(Date.now() + SESSION_MAX_AGE_S * 1000);
 

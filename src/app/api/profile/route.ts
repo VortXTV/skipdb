@@ -1,3 +1,4 @@
+import { READ_ONLY, readOnlyError } from "@/lib/read-only";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { and, eq, ne } from "drizzle-orm";
@@ -11,6 +12,7 @@ export const runtime = "nodejs";
 
 // Update the current user's name and email. Blocked for social-login users.
 export async function POST(req: Request) {
+  if (READ_ONLY) return readOnlyError();
   const session = await auth();
   if (!session?.user?.id) return apiError("Authentication required.", 401);
   const userId = session.user.id;

@@ -1,3 +1,4 @@
+import { applyReputationChange } from "@/lib/reputation";
 import { db } from "@/db";
 import { segments, moderationLog } from "@/db/schema";
 import { eq } from "drizzle-orm";
@@ -111,27 +112,34 @@ export async function PATCH(
     { role: actor.user.role, reputation: actor.user.reputation },
   );
 
-  await db
-    .update(segments)
-    .set({
-      startMs,
-      endMs,
-      durationMs,
-      status: decision.status,
-      autoApproved: decision.autoApproved,
-      reviewedBy: null,
-      reviewedAt: null,
-      rejectionReason: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(segments.id, segment.id));
+  const changed = await db.transaction(async (tx) => {
+    const [before] = await tx.select().from(segments).where(eq(segments.id, segment.id)).for("update");
+    if (!before) return null;
+    const [after] = await tx
+      .update(segments)
+      .set({
+        startMs,
+        endMs,
+        durationMs,
+        status: decision.status,
+        autoApproved: decision.autoApproved,
+        reviewedBy: null,
+        reviewedAt: null,
+        rejectionReason: null,
+        updatedAt: new Date(),
+      })
+      .where(eq(segments.id, segment.id)).returning();
 
-  await db.insert(moderationLog).values({
-    segmentId: segment.id,
-    moderatorId: isStaff(actor.user.role) ? actor.user.id : null,
-    action: "edit",
-    reason: decision.reasons.join("; "),
+    await tx.insert(moderationLog).values({
+      segmentId: segment.id,
+      moderatorId: isStaff(actor.user.role) ? actor.user.id : null,
+      action: "edit",
+      reason: decision.reasons.join("; "),
+    });
+    await applyReputationChange(tx, before.submittedBy, before, after);
+    return after;
   });
+  if (!changed) return apiError("Submission changed or was deleted. Retry.", 409);
 
   // Times/duration may have changed which segment wins for this type.
   await recomputeResolved({
@@ -165,7 +173,14 @@ export async function DELETE(
   if (loaded.error) return loaded.error;
   const { segment } = loaded;
 
-  await db.delete(segments).where(eq(segments.id, segment.id));
+  const deleted = await db.transaction(async (tx) => {
+    const [before] = await tx.select().from(segments).where(eq(segments.id, segment.id)).for("update");
+    if (!before) return false;
+    await tx.delete(segments).where(eq(segments.id, segment.id));
+    await applyReputationChange(tx, before.submittedBy, before, null);
+    return true;
+  });
+  if (!deleted) return apiError("Segment not found", 404);
 
   await recomputeResolved({
     imdbId: segment.imdbId,

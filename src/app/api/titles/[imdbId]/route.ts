@@ -1,3 +1,4 @@
+import { ReadOnlyTitleMissingError } from "@/lib/titles";
 import { json, apiError, preflight, LICENSE_NOTICE } from "@/lib/api";
 import { getTitleOverview } from "@/lib/coverage";
 import { rateLimit, clientIp } from "@/lib/rate-limit";
@@ -21,7 +22,11 @@ export async function GET(
   const id = imdbId.toLowerCase();
   if (!/^tt\d{6,10}$/.test(id)) return apiError("Invalid IMDb id", 400);
 
-  const overview = await getTitleOverview(id);
+  const overview = await getTitleOverview(id).catch((error: unknown) => {
+    if (error instanceof ReadOnlyTitleMissingError) return null;
+    throw error;
+  });
+  if (!overview) return apiError("Title is not cached on this read-only instance.", 404);
   return json({
     imdb_id: overview.title.imdbId,
     name: overview.title.name,

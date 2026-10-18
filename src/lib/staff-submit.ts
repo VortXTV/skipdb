@@ -1,3 +1,4 @@
+import { applyReputationChange } from "./reputation";
 /**
  * Shared logic for staff-approved segment insertion used by both the
  * /api/admin/bulk and /api/admin/import routes.
@@ -62,29 +63,34 @@ export async function insertStaffSegment(
     return { kind: "skipped", reason: "exact_match", existingId: exactMatch.id };
   }
 
-  const [created] = await db
-    .insert(segments)
-    .values({
-      titleId: input.titleId,
-      imdbId: input.imdbId,
-      season: input.season,
-      episode: input.episode,
-      segmentType: input.segmentType,
-      startMs: input.startMs,
-      endMs: input.endMs,
-      durationMs: input.durationMs,
-      submittedBy: input.submittedById,
-      status: "approved",
-      autoApproved: true,
-      source: "web",
-    })
-    .returning();
+  const created = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(segments)
+      .values({
+        titleId: input.titleId,
+        imdbId: input.imdbId,
+        season: input.season,
+        episode: input.episode,
+        segmentType: input.segmentType,
+        startMs: input.startMs,
+        endMs: input.endMs,
+        durationMs: input.durationMs,
+        submittedBy: input.submittedById,
+        status: "approved",
+        autoApproved: true,
+        source: "web",
+      })
+      .returning();
 
-  await db.insert(moderationLog).values({
-    segmentId: created.id,
-    moderatorId: input.submittedById,
-    action: "auto-approve",
-    reason: "staff import",
+    await tx.insert(moderationLog).values({
+      segmentId: created.id,
+      moderatorId: input.submittedById,
+      action: "auto-approve",
+      reason: "staff import",
+    });
+
+    await applyReputationChange(tx, created.submittedBy, null, created);
+    return created;
   });
 
   return {

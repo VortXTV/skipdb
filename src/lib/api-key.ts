@@ -1,3 +1,4 @@
+import { READ_ONLY } from "./read-only";
 import { createHash, randomBytes } from "node:crypto";
 import { db } from "@/db";
 import { apiKeys, users } from "@/db/schema";
@@ -19,6 +20,7 @@ export async function generateApiKey(userId: string): Promise<{
   key: string;
   prefix: string;
 }> {
+  if (READ_ONLY) throw new Error("This instance is read-only.");
   const secret = randomBytes(24).toString("base64url");
   const key = `${PREFIX}${secret}`;
   const keyHash = hashKey(key);
@@ -49,6 +51,7 @@ export async function revealApiKey(userId: string): Promise<string | null> {
 }
 
 export async function revokeApiKeys(userId: string): Promise<void> {
+  if (READ_ONLY) throw new Error("This instance is read-only.");
   await db
     .update(apiKeys)
     .set({ revoked: true })
@@ -68,10 +71,12 @@ export async function userForApiKey(plaintext: string) {
   const row = rows[0];
   if (!row) return null;
   // best-effort touch; don't block the request on it
-  db.update(apiKeys)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(apiKeys.id, row.key.id))
-    .catch(() => {});
+  if (!READ_ONLY) {
+    db.update(apiKeys)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiKeys.id, row.key.id))
+      .catch(() => {});
+  }
   return row.user;
 }
 

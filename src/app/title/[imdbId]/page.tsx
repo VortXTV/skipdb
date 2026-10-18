@@ -1,3 +1,4 @@
+import { ReadOnlyTitleMissingError } from "@/lib/titles";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getTitleOverview } from "@/lib/coverage";
@@ -53,7 +54,10 @@ export default async function TitlePage({
   const id = imdbId.toLowerCase();
   if (!/^tt\d{6,10}$/.test(id)) notFound();
 
-  const overview = await getTitleOverview(id);
+  const overview = await getTitleOverview(id).catch((error: unknown) => {
+    if (error instanceof ReadOnlyTitleMissingError) notFound();
+    throw error;
+  });
   const session = await auth();
   const { title } = overview;
 

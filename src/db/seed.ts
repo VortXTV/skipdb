@@ -1,8 +1,8 @@
 import "dotenv/config";
+import { recomputeResolved } from "../lib/resolved";
 import { db } from "./index";
-import { titles, episodes, segments, users, resolvedSegments } from "./schema";
-import { eq, desc } from "drizzle-orm";
-import { computeConfidence, countAgreement } from "../lib/confidence";
+import { titles, episodes, segments, users } from "./schema";
+import { eq } from "drizzle-orm";
 
 /**
  * Seeds a small, realistic dataset so the app is explorable immediately:
@@ -169,45 +169,12 @@ async function main() {
 
 /** Populate the resolved (decided best) segment per (episode, type). */
 async function backfillResolved() {
-  const approved = await db
-    .select()
-    .from(segments)
-    .where(eq(segments.status, "approved"))
-    .orderBy(
-      desc(segments.score),
-      desc(segments.votesUp),
-      desc(segments.createdAt),
-    );
-  await db.delete(resolvedSegments);
-  const groups = new Map<string, typeof approved>();
-  for (const s of approved) {
-    const k = `${s.imdbId}|${s.season}|${s.episode}|${s.segmentType}`;
-    if (!groups.has(k)) groups.set(k, []);
-    groups.get(k)!.push(s);
-  }
-  for (const group of groups.values()) {
-    const best = group[0];
-    const confidence = computeConfidence({
-      agreeCount: countAgreement(best, group),
-      votesUp: best.votesUp,
-      votesDown: best.votesDown,
-    });
-    await db.insert(resolvedSegments).values({
-      imdbId: best.imdbId,
-      titleId: best.titleId,
-      season: best.season,
-      episode: best.episode,
-      segmentType: best.segmentType,
-      segmentId: best.id,
-      startMs: best.startMs,
-      endMs: best.endMs,
-      durationMs: best.durationMs,
-      votesUp: best.votesUp,
-      votesDown: best.votesDown,
-      score: best.score,
-      confidence,
-    });
-  }
+  const all = await db.select().from(segments);
+  const groups = new Map(all.map((row) => [JSON.stringify([row.imdbId, row.season, row.episode, row.segmentType]), row]));
+  for (const row of groups.values()) await recomputeResolved({
+    imdbId: row.imdbId, titleId: row.titleId, season: row.season, episode: row.episode,
+    segmentType: row.segmentType,
+  });
 }
 
 async function upsertEpisode(

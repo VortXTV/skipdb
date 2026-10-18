@@ -12,8 +12,9 @@ import {
   jsonb,
   serial,
   real,
+  check,
 } from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 
 // ---------------------------------------------------------------------------
 // Enums
@@ -237,7 +238,8 @@ export const segments = pgTable(
 // in Postgres (persistent + consistent across instances) rather than memory.
 // ---------------------------------------------------------------------------
 
-export const resolvedSegments = pgTable(
+// Retained legacy cache: no deduplication or migration-time deletion.
+export const legacyResolvedSegments = pgTable(
   "resolved_segments",
   {
     id: serial("id").primaryKey(),
@@ -263,6 +265,43 @@ export const resolvedSegments = pgTable(
   },
   (table) => ({
     lookup: index("resolved_lookup_idx").on(
+      table.imdbId,
+      table.season,
+      table.episode,
+    ),
+  }),
+);
+
+// Unique current projection, populated additively by migration 0005.
+export const resolvedSegments = pgTable(
+  "resolved_segments_current",
+  {
+    id: serial("id").primaryKey(),
+    cacheKey: jsonb("cache_key").$type<[string, number | null, number | null, string]>().notNull(),
+    imdbId: text("imdb_id").notNull(),
+    titleId: integer("title_id")
+      .notNull()
+      .references(() => titles.id, { onDelete: "cascade" }),
+    season: integer("season"),
+    episode: integer("episode"),
+    segmentType: segmentType("segment_type").notNull(),
+    // the winning submission
+    segmentId: integer("segment_id")
+      .notNull()
+      .references(() => segments.id, { onDelete: "cascade" }),
+    startMs: bigint("start_ms", { mode: "number" }).notNull(),
+    endMs: bigint("end_ms", { mode: "number" }).notNull(),
+    durationMs: bigint("duration_ms", { mode: "number" }),
+    votesUp: integer("votes_up").notNull().default(0),
+    votesDown: integer("votes_down").notNull().default(0),
+    score: integer("score").notNull().default(0),
+    confidence: real("confidence").notNull().default(0.5),
+    updatedAt: timestamp("updated_at", { mode: "date" }).notNull().defaultNow(),
+  },
+  (table) => ({
+    byCacheKey: uniqueIndex("resolved_current_key_idx").on(table.cacheKey),
+    keyMatches: check("resolved_current_key_matches", sql`${table.cacheKey} = jsonb_build_array(${table.imdbId}, ${table.season}, ${table.episode}, ${table.segmentType})`),
+    lookup: index("resolved_current_lookup_idx").on(
       table.imdbId,
       table.season,
       table.episode,
